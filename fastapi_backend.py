@@ -16,11 +16,6 @@ import logging
 from pydantic import BaseModel
 import time
 
-from pipeline import AIPresentationCoordinatorAgent
-
-
-
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,10 +25,10 @@ try:
   from pipeline import (
       GroqClient, EnhancedPDFProcessor, SummaryAgent, 
       FlashcardAgent, QuizAgent, AIEnhancedResearchDiscoveryAgent, 
-      AIEnhancedYouTubeDiscoveryAgent, AIEnhancedWebResourceAgent,QAChatbotAgent ,AIPresentationCoordinatorAgent
+      AIEnhancedYouTubeDiscoveryAgent, AIEnhancedWebResourceAgent,QAChatbotAgent ,PresentationAgent 
        
   )
-  coordinator_agent = AIPresentationCoordinatorAgent("credentials.json")
+  
   logger.info("✅ Successfully imported pipeline modules")
 except ImportError as e:
   logger.error(f"❌ Failed to import pipeline modules: {e}")
@@ -72,7 +67,13 @@ class SummaryResponse(BaseModel):
   summary: str
   status: str
   fallback_used: bool = False
-
+class PresentationResponse(BaseModel):
+    status: str
+    message: str
+    slides_generated: int
+    images_generated: int
+    warnings: List[str]
+    download_url: Optional[str] = None
 class FlashcardResponse(BaseModel):
   flashcards: List[Dict]
   count: int
@@ -116,42 +117,8 @@ class ApiStatusResponse(BaseModel):
   fallback_enabled: bool
 
 # Pydantic models for Slidesmaker feature
-class SlideContentResponse(BaseModel):
-  title: str
-  content: List[str]
-  slide_type: str
-  notes: str = ""
 
-class PresentationResponse(BaseModel):
-  title: str
-  slides: List[SlideContentResponse]
-  theme: str
-  total_slides: int
 
-class DesignGuidelinesResponse(BaseModel):
-  color_scheme: List[str]
-  fonts: Dict[str, str]
-  layout: Dict[str, str]
-  suggestions: str
-
-class QualityAssessmentResponse(BaseModel):
-  issues: List[str]
-  suggestions: List[str]
-  quality_assessment: str
-  overall_score: int
-  success: bool
-
-class GeneratePresentationRequest(BaseModel):
-  topic: str
-  audience: str = "general"
-  duration: int = 10
-  theme: str = "professional"
-
-class GeneratePresentationOutput(BaseModel):
-  success: bool
-  presentation: PresentationResponse
-  design_guidelines: DesignGuidelinesResponse
-  quality_assessment: QualityAssessmentResponse
 
 # Global variables to store state
 study_sessions = {}
@@ -378,7 +345,8 @@ async def startup_event():
           research_agent = AIEnhancedResearchDiscoveryAgent(client)
           youtube_agent = AIEnhancedYouTubeDiscoveryAgent(client)
           web_agent = AIEnhancedWebResourceAgent(client)
-          coordinator_agent = AIPresentationCoordinatorAgent(client)
+          presentation_agent = PresentationAgent() 
+          
           logger.info("✅ AI agents initialized")
           
           # Check API status
@@ -420,6 +388,85 @@ async def get_api_status():
       message=status_msg,
       fallback_enabled=True
   )
+@app.post("/generate-presentation", response_model=PresentationResponse)
+async def generate_presentation(
+    session_id: str = "default", 
+    max_slides: int = 10, 
+    generate_images: bool = False
+):
+    """Generate PowerPoint presentation from document"""
+    
+    if session_id not in study_sessions:
+        raise HTTPException(status_code=404, detail="No document found. Please upload a PDF first.")
+
+    if max_slides < 3 or max_slides > 20:
+        max_slides = min(max(max_slides, 3), 20)
+
+    try:
+        logger.info(f"📊 Generating presentation with {max_slides} slides...")
+        text = study_sessions[session_id]["text"]
+        filename = study_sessions[session_id].get("filename", "document")
+        
+        # Create output path
+        safe_filename = "".join(c for c in filename if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        output_filename = f"{safe_filename}_presentation.pptx"
+        output_path = os.path.join(tempfile.gettempdir(), output_filename)
+
+        # Generate presentation with timeout
+        result = await asyncio.wait_for(
+            asyncio.to_thread(
+                presentation_agent.generate_presentation,
+                text,
+                output_path,
+                max_slides,
+                generate_images
+            ),
+            timeout=180.0  # 3 minutes timeout
+        )
+
+        if result["status"] in ["success", "completed_with_warnings"]:
+            # Store the file path for download
+            study_sessions[session_id]["presentation_path"] = output_path
+            
+            logger.info(f"✅ Presentation generated: {result['slides_generated']} slides")
+            
+            return PresentationResponse(
+                status=result["status"],
+                message=result["message"],
+                slides_generated=result["slides_generated"],
+                images_generated=result.get("images_generated", 0),
+                warnings=result.get("warnings", []),
+                download_url=f"/download-presentation/{session_id}"
+            )
+        else:
+            logger.error(f"❌ Presentation generation failed: {result['message']}")
+            raise HTTPException(status_code=500, detail=result["message"])
+
+    except asyncio.TimeoutError:
+        logger.error("❌ Presentation generation timeout")
+        raise HTTPException(status_code=408, detail="Presentation generation timeout. Document may be too complex.")
+    except Exception as e:
+        logger.error(f"❌ Presentation generation error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Presentation generation failed: {str(e)}")
+
+@app.get("/download-presentation/{session_id}")
+async def download_presentation(session_id: str):
+    """Download generated presentation"""
+    
+    if session_id not in study_sessions:
+        raise HTTPException(status_code=404, detail="No session found")
+    
+    presentation_path = study_sessions[session_id].get("presentation_path")
+    if not presentation_path or not os.path.exists(presentation_path):
+        raise HTTPException(status_code=404, detail="No presentation file found")
+    
+    filename = os.path.basename(presentation_path)
+    
+    return FileResponse(
+        path=presentation_path,
+        filename=filename,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    )
 
 @app.get("/health")
 async def health_check():
@@ -1069,60 +1116,6 @@ async def check_quota_endpoint():
           "Video discovery"
       ]
   }
-
-@app.post("/generate-presentation", response_model=GeneratePresentationOutput)
-async def generate_presentation(request: GeneratePresentationRequest):
-  """API endpoint to generate a presentation using the multi-agent system."""
-  try:
-      if not coordinator_agent:
-          raise HTTPException(status_code=500, detail="Coordinator agent not initialized.")
-
-      logger.info(f"🚀 Generating presentation for topic: {request.topic}")
-      
-      presentation, design_guidelines, quality_result = await asyncio.to_thread(
-          coordinator_agent.create_presentation,
-          topic=request.topic,
-          audience=request.audience,
-          duration=request.duration,
-          theme=request.theme
-      )
-      
-      response_data = GeneratePresentationOutput(
-          success=True,
-          presentation=PresentationResponse(
-              title=presentation.title,
-              slides=[
-                  SlideContentResponse(
-                      title=slide.title,
-                      content=slide.content,
-                      slide_type=slide.slide_type,
-                      notes=slide.notes
-                  ) for slide in presentation.slides
-              ],
-              total_slides=presentation.total_slides,
-              theme=presentation.theme
-          ),
-          design_guidelines=DesignGuidelinesResponse(
-              color_scheme=design_guidelines["color_scheme"],
-              fonts=design_guidelines["fonts"],
-              layout=design_guidelines["layout"],
-              suggestions=design_guidelines["suggestions"]
-          ),
-          quality_assessment=QualityAssessmentResponse(
-              issues=quality_result["issues"],
-              suggestions=quality_result["suggestions"],
-              quality_assessment=quality_result["quality_assessment"],
-              overall_score=quality_result["overall_score"],
-              success=quality_result["success"]
-          )
-      )
-      
-      logger.info(f"✅ Presentation generated successfully for topic: {request.topic}")
-      return response_data
-  
-  except Exception as e:
-      logger.error(f"❌ Error generating presentation: {str(e)}")
-      raise HTTPException(status_code=500, detail=f"Failed to create presentation: {str(e)}")
 
 
 if __name__ == "__main__":
