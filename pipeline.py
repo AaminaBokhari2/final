@@ -45,6 +45,7 @@ from pdf2image import convert_from_path
 from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv
 from groq import Groq
+# Add this import at the top of your pipeline.py
 
 # Load environment variables
 load_dotenv()
@@ -1384,120 +1385,262 @@ import requests
 load_dotenv()
 
 # REPLACE your AIEnhancedYouTubeDiscoveryAgent class with this fixed version
-from googleapiclient.discovery import build
-from google.oauth2 import service_account
-import json
 
-class SlideContent:
-    def __init__(self, title, content, slide_type="content", notes=""):
-        self.title = title
-        self.content = content
-        self.slide_type = slide_type
-        self.notes = notes
+from transformers import pipeline
+from pptx import Presentation
+from pptx.util import Inches
+import tempfile
+import os
+from typing import List, Dict, Tuple
 
-class PresentationData:
-    def __init__(self, title, slides, total_slides, theme):
-        self.title = title
-        self.slides = slides
-        self.total_slides = total_slides
-        self.theme = theme
-
-class AIPresentationCoordinatorAgent:
-    def __init__(self, ai_client=None, creds_path="credentials.json", folder_id=None):
-        self.ai_client = ai_client
-        self.creds = service_account.Credentials.from_service_account_file(
-            creds_path,
-            scopes=[
-                "https://www.googleapis.com/auth/drive",
-                "https://www.googleapis.com/auth/presentations"
-            ]
+class PresentationAgent:
+    def __init__(self):
+        """Initialize presentation generation models"""
+        # Text summarization model
+        self.summarizer = pipeline(
+            "summarization", 
+            model="facebook/bart-large-cnn",
+            tokenizer="facebook/bart-large-cnn"
         )
-        self.drive_service = build('drive', 'v3', credentials=self.creds)
-        self.slides_service = build('slides', 'v1', credentials=self.creds)
-        self.folder_id = folder_id or "13OheBh-Lo6PiSUWqkYvjFWfU9Nm0WdWB"  # shared folder
-
-    def create_presentation(self, topic, audience="general", duration=10, theme="professional"):
-        """
-        Generates slides using AI and creates a Google Slides file.
-        Returns (presentation, design_guidelines, quality_result)
-        """
-
-        # Step 1: Generate slide content with AI
-        ai_prompt = f"""
-        Create a slide deck on '{topic}' for a {audience} audience.
-        Duration: {duration} minutes. Theme: {theme}.
-        Provide JSON with: title, slides (title, content, slide_type, notes), design_guidelines, quality_assessment.
-        """
-        if self.ai_client:
-            response = self.ai_client.chat.completions.create(
-                model="llama3-8b-8192",
-                messages=[{"role": "user", "content": ai_prompt}],
-                temperature=0.7
+        
+        # Key point extraction model
+        self.keypoint_extractor = pipeline(
+            "text2text-generation",
+            model="mrm8488/t5-base-finetuned-question-generation-ap"
+        )
+        
+        # Image generation (optional - requires more resources)
+        self.image_generator = None
+        try:
+            from diffusers import StableDiffusionPipeline
+            self.image_generator = StableDiffusionPipeline.from_pretrained(
+                "CompVis/stable-diffusion-v1-4",
+                use_auth_token=os.getenv("HF_TOKEN")
             )
-            try:
-                ai_data = json.loads(response.choices[0].message["content"])
-            except Exception as e:
-                raise ValueError(f"AI returned invalid JSON: {e}")
-        else:
-            raise ValueError("AI client not configured for presentation generation")
+        except ImportError:
+            print("⚠️ Image generation disabled - diffusers not installed")
+        except Exception as e:
+            print(f"⚠️ Image generation disabled - {str(e)}")
 
-        # Step 2: Create Google Slides file in Drive
-        file_metadata = {
-            'name': ai_data["title"],
-            'mimeType': 'application/vnd.google-apps.presentation',
-            'parents': [self.folder_id]
+    def generate_presentation(self, document_text: str, output_path: str, 
+                            max_slides: int = 10, generate_images: bool = False) -> Dict:
+        """
+        Generate a PowerPoint presentation from document text
+        
+        Args:
+            document_text: Input text to create presentation from
+            output_path: Where to save the PPTX file
+            max_slides: Maximum number of slides to generate
+            generate_images: Whether to generate images (requires more resources)
+            
+        Returns:
+            Dictionary with status and metadata
+        """
+        result = {
+            "status": "success",
+            "message": "",
+            "slides_generated": 0,
+            "images_generated": 0,
+            "warnings": []
         }
-        presentation_file = self.drive_service.files().create(body=file_metadata).execute()
-        presentation_id = presentation_file.get('id')
+        
+        try:
+            if not document_text.strip():
+                result["status"] = "error"
+                result["message"] = "No document content provided"
+                return result
+            
+            # Step 1: Extract key points from document
+            key_points = self._extract_key_points(document_text, max_slides)
+            if not key_points:
+                result["status"] = "error"
+                result["message"] = "Could not extract key points from document"
+                return result
+            
+            # Step 2: Create PowerPoint presentation
+            prs = Presentation()
+            
+            # Add title slide
+            title_slide = prs.slide_layouts[0]
+            slide = prs.slides.add_slide(title_slide)
+            title = slide.shapes.title
+            subtitle = slide.placeholders[1]
+            
+            title.text = "AI-Generated Presentation"
+            subtitle.text = "Created from Document Content"
+            
+            # Step 3: Add content slides
+            for i, point in enumerate(key_points[:max_slides]):
+                try:
+                    # Add slide with title and content
+                    bullet_slide = prs.slide_layouts[1]
+                    slide = prs.slides.add_slide(bullet_slide)
+                    shapes = slide.shapes
+                    
+                    title_shape = shapes.title
+                    body_shape = shapes.placeholders[1]
+                    
+                    title_shape.text = f"Key Point {i+1}"
+                    tf = body_shape.text_frame
+                    tf.text = point["summary"]
+                    
+                    # Add bullet points if available
+                    if point.get("bullets"):
+                        for bullet in point["bullets"]:
+                            p = tf.add_paragraph()
+                            p.text = bullet
+                            p.level = 0
+                    
+                    # Generate and add image if enabled
+                    if generate_images and self.image_generator:
+                        try:
+                            image_path = self._generate_slide_image(point["summary"])
+                            if image_path:
+                                left = Inches(1)
+                                top = Inches(2)
+                                height = Inches(3)
+                                slide.shapes.add_picture(
+                                    image_path, left, top, height=height
+                                )
+                                os.remove(image_path)
+                                result["images_generated"] += 1
+                        except Exception as e:
+                            result["warnings"].append(f"Image generation failed: {str(e)}")
+                    
+                    result["slides_generated"] += 1
+                    
+                except Exception as e:
+                    result["warnings"].append(f"Failed to create slide {i+1}: {str(e)}")
+                    continue
+            
+            # Save presentation
+            prs.save(output_path)
+            result["message"] = f"Successfully generated presentation with {result['slides_generated']} slides"
+            
+            if result["warnings"]:
+                result["status"] = "completed_with_warnings"
+            else:
+                result["status"] = "success"
+                
+        except Exception as e:
+            result["status"] = "error"
+            result["message"] = f"Presentation generation failed: {str(e)}"
+        
+        return result
 
-        # Step 3: Add slides to Google Slides
-        requests = []
-        for slide in ai_data["slides"]:
-            requests.append({
-                "createSlide": {
-                    "slideLayoutReference": {
-                        "predefinedLayout": "TITLE_AND_BODY"
-                    }
-                }
-            })
-        if requests:
-            self.slides_service.presentations().batchUpdate(
-                presentationId=presentation_id,
-                body={"requests": requests}
-            ).execute()
+    def _extract_key_points(self, text: str, max_points: int) -> List[Dict]:
+        """Extract key points and summaries from document text"""
+        try:
+            # First summarize the entire document to get main themes
+            overall_summary = self.summarizer(
+                text,
+                max_length=150,
+                min_length=30,
+                do_sample=False
+            )[0]['summary_text']
+            
+            # Split text into sections (simplified approach)
+            sections = self._split_into_sections(text, max_points)
+            
+            key_points = []
+            for section in sections:
+                try:
+                    # Summarize each section
+                    summary = self.summarizer(
+                        section,
+                        max_length=100,
+                        min_length=20,
+                        do_sample=False
+                    )[0]['summary_text']
+                    
+                    # Extract key bullets
+                    bullets = self._extract_bullet_points(section)
+                    
+                    key_points.append({
+                        "summary": summary,
+                        "bullets": bullets[:3]  # Limit to 3 bullets per slide
+                    })
+                except Exception as e:
+                    continue
+            
+            return key_points
+            
+        except Exception as e:
+            print(f"❌ Key point extraction failed: {e}")
+            return []
 
-        # Step 4: Prepare return objects
-        slides_obj = [
-            SlideContent(
-                title=s["title"],
-                content=s["content"],
-                slide_type=s.get("slide_type", "content"),
-                notes=s.get("notes", "")
+    def _split_into_sections(self, text: str, max_sections: int) -> List[str]:
+        """Split document into logical sections"""
+        # Simple approach - split by paragraphs or headings
+        paragraphs = [p.strip() for p in text.split('\n') if p.strip()]
+        
+        # Group paragraphs into sections
+        min_paras_per_section = max(1, len(paragraphs) // max_sections)
+        sections = []
+        current_section = []
+        
+        for para in paragraphs:
+            current_section.append(para)
+            if len(current_section) >= min_paras_per_section:
+                sections.append("\n".join(current_section))
+                current_section = []
+        
+        if current_section:
+            sections.append("\n".join(current_section))
+        
+        return sections[:max_sections]
+
+    def _extract_bullet_points(self, text: str) -> List[str]:
+        """Extract bullet points from text"""
+        try:
+            # Use question generation model to find key points
+            inputs = f"generate questions: {text[:2000]}"
+            questions = self.keypoint_extractor(
+                inputs,
+                max_length=50,
+                num_return_sequences=3,
+                do_sample=True
             )
-            for s in ai_data["slides"]
-        ]
-        presentation_obj = PresentationData(
-            title=ai_data["title"],
-            slides=slides_obj,
-            total_slides=len(slides_obj),
-            theme=theme
-        )
+            
+            # Convert questions to statements
+            bullets = []
+            for q in questions:
+                question = q['generated_text'].strip()
+                if question.endswith('?'):
+                    # Simple conversion to statement
+                    statement = question[:-1] + " is important."
+                    bullets.append(statement)
+            
+            return bullets[:3]  # Return top 3
+        
+        except Exception as e:
+            print(f"❌ Bullet extraction failed: {e}")
+            return []
 
-        design_guidelines = ai_data.get("design_guidelines", {
-            "color_scheme": "blue",
-            "fonts": "Arial",
-            "layout": "standard",
-            "suggestions": []
-        })
-        quality_result = ai_data.get("quality_assessment", {
-            "issues": [],
-            "suggestions": [],
-            "quality_assessment": "N/A",
-            "overall_score": 0,
-            "success": True
-        })
+    def _generate_slide_image(self, text: str) -> Optional[str]:
+        """Generate an image for a slide (optional)"""
+        if not self.image_generator:
+            return None
+            
+        try:
+            # Create temp file
+            temp_dir = tempfile.gettempdir()
+            image_path = os.path.join(temp_dir, f"slide_img_{hash(text)}.png")
+            
+            # Generate image from text
+            image = self.image_generator(
+                prompt=text[:500],  # Limit prompt length
+                height=512,
+                width=512
+            ).images[0]
+            
+            image.save(image_path)
+            return image_path
+            
+        except Exception as e:
+            print(f"❌ Image generation failed: {e}")
+            return None
 
-        return presentation_obj, design_guidelines, quality_result
 
 class AIEnhancedYouTubeDiscoveryAgent:
     def __init__(self, groq_client=None):
@@ -2165,7 +2308,7 @@ def run_study_assistant_fixed(pdf_path):
         summary_agent = SummaryAgent(client)
         flashcard_agent = FlashcardAgent(client)
         quiz_agent = QuizAgent(client)
-        
+        presentation_agent = PresentationAgent() 
         # Create discovery agents with proper error handling
         print("🔧 Initializing discovery agents...")
         discovery_agents = create_discovery_agents(client) 
@@ -2199,6 +2342,20 @@ def run_study_assistant_fixed(pdf_path):
         quiz = quiz_agent.generate_quiz_structured(result["text"], num_questions=6)
 
         # Discovery phase with proper error handling
+        # Generate presentation
+        print("\n📊 Generating presentation...")
+        pptx_path = os.path.join(os.path.dirname(pdf_path), "generated_presentation.pptx")
+        presentation_result = presentation_agent.generate_presentation(
+            document_text=result["text"],
+            output_path=pptx_path,
+            max_slides=12,
+            generate_images=False
+        )
+        
+        if presentation_result["status"] == "success":
+            print(f"✅ Generated presentation: {pptx_path}")
+        else:
+            print(f"⚠️ Presentation generation had issues: {presentation_result['messagee']}")
         print("\n🔍 Discovering learning resources...")
         
         papers = []
