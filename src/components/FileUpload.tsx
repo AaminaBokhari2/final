@@ -439,53 +439,13 @@ export function FileUpload() {
         />
       </motion.div>
 
-      {/* Stats Section */}
-      <motion.div 
-        className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-16"
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.6 }}
-      >
-        {[
-          { number: "10K+", label: "Documents Processed", icon: FileText },
-          { number: "50K+", label: "Flashcards Generated", icon: Brain },
-          { number: "25K+", label: "Quizzes Created", icon: Zap },
-          { number: "99%", label: "User Satisfaction", icon: Sparkles }
-        ].map((stat, index) => (
-          <motion.div
-            key={index}
-            className="text-center p-6 rounded-2xl bg-gradient-to-br from-white/60 to-blue-50/60 dark:from-gray-800/60 dark:to-blue-900/30 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50"
-            whileHover={{ scale: 1.05, y: -5 }}
-            transition={{ type: "spring", stiffness: 300 }}
-          >
-            <motion.div
-              className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl flex items-center justify-center mx-auto mb-4"
-              whileHover={{ rotate: 360 }}
-              transition={{ duration: 0.5 }}
-            >
-              <stat.icon className="w-6 h-6 text-white" />
-            </motion.div>
-            <motion.div 
-              className="text-3xl font-bold text-gray-900 dark:text-white mb-2"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.8 + index * 0.1 }}
-            >
-              {stat.number}
-            </motion.div>
-            <div className="text-sm text-gray-600 dark:text-gray-300 font-medium">
-              {stat.label}
-            </div>
-          </motion.div>
-        ))}
-      </motion.div>
 
       {/* How it Works */}
       <motion.div 
         className="text-center mb-16"
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.8 }}
+        transition={{ duration: 0.6, delay: 0.6 }}
       >
         <h2 className="text-4xl font-bold text-gray-900 dark:text-white mb-12">
           How It Works
