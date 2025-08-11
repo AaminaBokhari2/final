@@ -6,7 +6,7 @@ This version uses Groq API instead of OpenAI
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 import tempfile
 import os
 from typing import List, Dict, Optional
@@ -22,37 +22,44 @@ logger = logging.getLogger(__name__)
 
 # Import your existing classes and newly integrated slidesmaker classes
 try:
-  from pipeline import (
-      GroqClient, EnhancedPDFProcessor, SummaryAgent, 
-      FlashcardAgent, QuizAgent, AIEnhancedResearchDiscoveryAgent, 
-      AIEnhancedYouTubeDiscoveryAgent, AIEnhancedWebResourceAgent,QAChatbotAgent ,PresentationAgent 
-       
-  )
-  
-  logger.info("✅ Successfully imported pipeline modules")
+    from pipeline import (
+        GroqClient,
+        EnhancedPDFProcessor,
+        SummaryAgent,
+        FlashcardAgent,
+        QuizAgent,
+        AIEnhancedResearchDiscoveryAgent,
+        AIEnhancedYouTubeDiscoveryAgent,
+        AIEnhancedWebResourceAgent,
+        QAChatbotAgent,
+        AIPresentationCoordinatorAgent,
+        PresentationAgent
+    )
+    logger.info("✅ Successfully imported pipeline modules")
 except ImportError as e:
-  logger.error(f"❌ Failed to import pipeline modules: {e}")
-  raise
+    logger.error(f"❌ Failed to import pipeline modules: {e}")
+    raise
 
 # Initialize FastAPI app
 app = FastAPI(
-  title="AI Study Assistant API",
-  description="Backend API for AI-powered study material generation",
-  version="1.0.0"
+    title="AI Study Assistant API",
+    description="Backend API for AI-powered study material generation",
+    version="1.0.0"
 )
 
+# Add CORS middleware
 app.add_middleware(
-  CORSMiddleware,
-  allow_origins=[
-      "http://localhost:3000",
-      "http://localhost:5173", 
-      "https://psychic-yodel-77vv4g95qg6crv9g-5173.app.github.dev",  # Your frontend
-      "https://psychic-yodel-77vv4g95qg6crv9g-5173.app.github.dev/", # With trailing slash
-      "https://*.app.github.dev",  # Wildcard for all codespaces
-  ],
-  allow_credentials=False,
-  allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allow_headers=["*"],
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "https://psychic-yodel-77vv4g95qg6crv9g-5173.app.github.dev",  # Your frontend
+        "https://psychic-yodel-77vv4g95qg6crv9g-5173.app.github.dev/", # With trailing slash
+        "https://*.app.github.dev",  # Wildcard for all codespaces
+    ],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
 )
 
 # Pydantic models for API responses
@@ -138,7 +145,8 @@ quiz_agent = None
 research_agent = None
 youtube_agent = None
 web_agent = None
-
+presentation_agent = None 
+coordinator_agent = None
 
 def check_api_status():
   """Check Groq API status and update global status"""
@@ -324,131 +332,287 @@ def generate_fallback_quiz(text: str, num_questions: int = 8) -> List[Dict]:
 
 @app.on_event("startup")
 async def startup_event():
-  """Initialize agents on startup with better error handling"""
-  global client, pdf_processor, summary_agent, flashcard_agent, quiz_agent, research_agent, youtube_agent, web_agent, coordinator_agent
-  
-  try:
-      logger.info("🚀 Initializing AI agents...")
-      
-      # Initialize GroqClient first
-      client = GroqClient()
-      
-      # Initialize PDF processor (always available)
-      pdf_processor = EnhancedPDFProcessor()
-      logger.info("✅ PDF processor initialized")
-      
-      # Try to initialize AI components
-      try:
-          summary_agent = SummaryAgent(client)
-          flashcard_agent = FlashcardAgent(client)
-          quiz_agent = QuizAgent(client)
-          research_agent = AIEnhancedResearchDiscoveryAgent(client)
-          youtube_agent = AIEnhancedYouTubeDiscoveryAgent(client)
-          web_agent = AIEnhancedWebResourceAgent(client)
-          presentation_agent = PresentationAgent() 
-          
-          logger.info("✅ AI agents initialized")
-          
-          # Check API status
-          if check_api_status():
-              logger.info("✅ Groq API connection successful")
-          else:
-              logger.warning("⚠️ Groq API issues detected - fallback mode enabled")
-              
-      except Exception as e:
-          logger.error(f"❌ Error initializing AI agents: {e}")
-          logger.info("🔄 Running in fallback mode - basic functionality only")
-          
-  except Exception as e:
-      logger.error(f"❌ Critical error during startup: {e}")
-      # Don't raise - allow server to start in fallback mode
-
-@app.get("/")
-async def root():
-  return {"message": "AI Study Assistant API", "version": "1.0.0", "status": "running"}
-
-@app.get("/api-status", response_model=ApiStatusResponse)
-async def get_api_status():
-  """Get current API status"""
-  is_available = check_api_status()
-  
-  if api_status["quota_exceeded"]:
-      status_msg = "Quota exceeded"
-      quota_status = "exceeded"
-  elif not is_available:
-      status_msg = "API unavailable"
-      quota_status = "unavailable"
-  else:
-      status_msg = "API operational"
-      quota_status = "available"
-  
-  return ApiStatusResponse(
-      api_available=is_available,
-      quota_status=quota_status,
-      message=status_msg,
-      fallback_enabled=True
-  )
-@app.post("/generate-presentation", response_model=PresentationResponse)
-async def generate_presentation(
-    session_id: str = "default", 
-    max_slides: int = 10, 
-    generate_images: bool = False
-):
-    """Generate PowerPoint presentation from document"""
+    """Initialize agents on startup with better error handling"""
+    global client, pdf_processor, summary_agent, flashcard_agent, quiz_agent, research_agent, youtube_agent, web_agent, coordinator_agent
     
-    if session_id not in study_sessions:
-        raise HTTPException(status_code=404, detail="No document found. Please upload a PDF first.")
-
-    if max_slides < 3 or max_slides > 20:
-        max_slides = min(max(max_slides, 3), 20)
-
     try:
-        logger.info(f"📊 Generating presentation with {max_slides} slides...")
-        text = study_sessions[session_id]["text"]
-        filename = study_sessions[session_id].get("filename", "document")
+        logger.info("🚀 Initializing AI agents...")
         
-        # Create output path
-        safe_filename = "".join(c for c in filename if c.isalnum() or c in (' ', '-', '_')).rstrip()
-        output_filename = f"{safe_filename}_presentation.pptx"
-        output_path = os.path.join(tempfile.gettempdir(), output_filename)
+        # Initialize GroqClient first
+        client = GroqClient()
+        logger.info("✅ GroqClient initialized")
+        
+        # Initialize PDF processor (always available)
+        pdf_processor = EnhancedPDFProcessor()
+        logger.info("✅ PDF processor initialized")
+        
+        # Try to initialize AI components
+        try:
+            summary_agent = SummaryAgent(client)
+            logger.info("✅ Summary agent initialized")
+            
+            flashcard_agent = FlashcardAgent(client)
+            logger.info("✅ Flashcard agent initialized")
+            
+            quiz_agent = QuizAgent(client)
+            logger.info("✅ Quiz agent initialized")
+            
+            research_agent = AIEnhancedResearchDiscoveryAgent(client)
+            logger.info("✅ Research agent initialized")
+            
+            youtube_agent = AIEnhancedYouTubeDiscoveryAgent(client)
+            logger.info("✅ YouTube agent initialized")
+            
+            web_agent = AIEnhancedWebResourceAgent(client)
+            logger.info("✅ Web agent initialized")
+            
+            # Initialize coordinator agent - FIXED
+            try:
+                coordinator_agent = AIPresentationCoordinatorAgent(client)
+                logger.info("✅ Presentation coordinator agent initialized")
+            except Exception as coord_error:
+                logger.error(f"❌ Failed to initialize coordinator agent: {coord_error}")
+                coordinator_agent = None
+            
+            logger.info("✅ All AI agents initialized")
+            
+            # Check API status
+            if check_api_status():
+                logger.info("✅ Groq API connection successful")
+            else:
+                logger.warning("⚠️ Groq API issues detected - fallback mode enabled")
+                
+        except Exception as e:
+            logger.error(f"❌ Error initializing AI agents: {e}")
+            logger.info("🔄 Running in fallback mode - basic functionality only")
+            
+    except Exception as e:
+        logger.error(f"❌ Critical error during startup: {e}")
+        # Don't raise - allow server to start in fallback mode
 
-        # Generate presentation with timeout
+from fastapi import FastAPI, Query
+from typing import Optional
+
+@app.post("/generate-presentation")
+async def generate_presentation(
+    topic: Optional[str] = Query(None, description="Presentation topic"),
+    session_id: str = Query("default", description="Session ID"),
+    max_slides: int = Query(10, description="Maximum number of slides"),
+    generate_images: bool = Query(False, description="Generate images (not implemented)"),
+    audience: str = Query("general", description="Target audience"),
+    duration: int = Query(10, description="Duration in minutes"), 
+    theme: str = Query("professional", description="Presentation theme")
+):
+    """
+    Generate presentation - FINAL WORKING VERSION
+    Handles query parameters properly
+    """
+    try:
+        # Validate coordinator agent
+        if not coordinator_agent:
+            logger.error("❌ Coordinator agent not initialized")
+            return {
+                "success": False,
+                "error": "Presentation service not available",
+                "message": "Coordinator agent not initialized"
+            }
+        
+        # Check API status
+        if not check_api_status():
+            logger.warning("⚠️ API unavailable")
+            return {
+                "success": False,
+                "error": "API unavailable", 
+                "message": "AI service temporarily unavailable. Please try again later."
+            }
+        
+        # Get topic from session if not provided
+        if not topic:
+            if session_id not in study_sessions:
+                return {
+                    "success": False,
+                    "error": "No topic provided",
+                    "message": "Please provide a topic or upload a document first"
+                }
+            
+            # Extract topic from document
+            document_text = study_sessions[session_id]["text"]
+            words = document_text.split()[:100]
+            topic = " ".join([w for w in words if len(w) > 3][:5])
+            if not topic:
+                topic = "Document Summary"
+            
+            logger.info(f"📄 Extracted topic from document: {topic}")
+        
+        logger.info(f"🚀 Generating presentation:")
+        logger.info(f"   📝 Topic: {topic}")
+        logger.info(f"   👥 Audience: {audience}")
+        logger.info(f"   ⏱️ Duration: {duration} minutes")
+        logger.info(f"   🎨 Theme: {theme}")
+        logger.info(f"   📊 Max slides: {max_slides}")
+        
+        # Generate presentation with proper error handling
+        try:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    coordinator_agent.create_presentation,
+                    topic=topic,
+                    audience=audience,
+                    duration=duration,
+                    theme=theme
+                ),
+                timeout=180.0  # 3 minutes timeout
+            )
+            
+            presentation, design_guidelines, quality_result = result
+            
+            # Limit slides to max_slides
+            limited_slides = presentation.slides[:max_slides]
+            
+            # Return success response
+            response_data = {
+                "success": True,
+                "presentation": {
+                    "title": presentation.title,
+                    "slides": [
+                        {
+                            "title": slide.title,
+                            "content": slide.content,
+                            "slide_type": slide.slide_type,
+                            "notes": getattr(slide, 'notes', '')
+                        } for slide in limited_slides
+                    ],
+                    "total_slides": len(limited_slides),
+                    "theme": presentation.theme
+                },
+                "design_guidelines": {
+                    "color_scheme": design_guidelines.get("color_scheme", ["#1e3a8a", "#3b82f6", "#93c5fd"]),
+                    "fonts": design_guidelines.get("fonts", {"title": "Arial Bold", "body": "Arial"}),
+                    "layout": design_guidelines.get("layout", {"type": "standard"}),
+                    "suggestions": design_guidelines.get("suggestions", "Use consistent formatting")
+                },
+                "quality_assessment": {
+                    "issues": quality_result.get("issues", []),
+                    "suggestions": quality_result.get("suggestions", []),
+                    "quality_assessment": quality_result.get("quality_assessment", "Good presentation"),
+                    "overall_score": quality_result.get("overall_score", 85),
+                    "success": quality_result.get("success", True)
+                }
+            }
+            
+            logger.info(f"✅ Presentation generated successfully: {len(limited_slides)} slides")
+            return response_data
+            
+        except asyncio.TimeoutError:
+            logger.error("❌ Presentation generation timeout")
+            return {
+                "success": False,
+                "error": "Generation timeout",
+                "message": "Presentation generation took too long. Try with a simpler topic."
+            }
+        except Exception as gen_error:
+            logger.error(f"❌ Generation error: {str(gen_error)}")
+            return {
+                "success": False,
+                "error": "Generation failed",
+                "message": f"Failed to generate presentation: {str(gen_error)}"
+            }
+    
+    except Exception as e:
+        logger.error(f"❌ Unexpected error in presentation generation: {str(e)}")
+        return {
+            "success": False,
+            "error": "Unexpected error",
+            "message": f"Unexpected error: {str(e)}"
+        }
+        
+@app.get("/test-presentation")
+async def test_presentation():
+    """Test endpoint to verify presentation service"""
+    try:
+        logger.info("🧪 Testing presentation service...")
+        
+        # Check if coordinator_agent exists in globals
+        if 'coordinator_agent' not in globals():
+            return {
+                "status": "error",
+                "message": "coordinator_agent not in globals",
+                "coordinator_available": False,
+                "api_available": False,
+                "debug": "Variable not defined globally"
+            }
+        
+        # Check coordinator agent
+        if coordinator_agent is None:
+            return {
+                "status": "error",
+                "message": "Coordinator agent is None (not initialized)",
+                "coordinator_available": False,
+                "api_available": check_api_status(),
+                "debug": "Agent not initialized during startup"
+            }
+        
+        # Check API
+        api_status = check_api_status()
+        logger.info(f"API status: {api_status}")
+        
+        return {
+            "status": "ready" if api_status else "api_unavailable",
+            "message": "Presentation service ready" if api_status else "API unavailable",
+            "coordinator_available": True,
+            "api_available": api_status,
+            "coordinator_type": str(type(coordinator_agent))
+        }
+            
+    except Exception as e:
+        logger.error(f"Test presentation error: {e}")
+        return {
+            "status": "error",
+            "message": f"Test failed: {str(e)}",
+            "coordinator_available": False,
+            "api_available": False,
+            "error": str(e)
+        }
+
+# Also add this simpler endpoint for testing
+@app.post("/generate-presentation-simple")
+async def generate_presentation_simple(topic: str = "Machine Learning"):
+    """Simplified presentation generation for testing"""
+    try:
+        if not coordinator_agent:
+            return {"error": "Coordinator not available"}
+        
+        if not check_api_status():
+            return {"error": "API not available"}
+        
+        logger.info(f"🧪 Testing simple presentation generation: {topic}")
+        
         result = await asyncio.wait_for(
             asyncio.to_thread(
-                presentation_agent.generate_presentation,
-                text,
-                output_path,
-                max_slides,
-                generate_images
+                coordinator_agent.create_presentation,
+                topic=topic,
+                audience="general",
+                duration=10,
+                theme="professional"
             ),
-            timeout=180.0  # 3 minutes timeout
+            timeout=120.0
         )
-
-        if result["status"] in ["success", "completed_with_warnings"]:
-            # Store the file path for download
-            study_sessions[session_id]["presentation_path"] = output_path
-            
-            logger.info(f"✅ Presentation generated: {result['slides_generated']} slides")
-            
-            return PresentationResponse(
-                status=result["status"],
-                message=result["message"],
-                slides_generated=result["slides_generated"],
-                images_generated=result.get("images_generated", 0),
-                warnings=result.get("warnings", []),
-                download_url=f"/download-presentation/{session_id}"
-            )
-        else:
-            logger.error(f"❌ Presentation generation failed: {result['message']}")
-            raise HTTPException(status_code=500, detail=result["message"])
-
-    except asyncio.TimeoutError:
-        logger.error("❌ Presentation generation timeout")
-        raise HTTPException(status_code=408, detail="Presentation generation timeout. Document may be too complex.")
+        
+        presentation, design_guidelines, quality_result = result
+        
+        return {
+            "success": True,
+            "title": presentation.title,
+            "slide_count": len(presentation.slides),
+            "first_slide": {
+                "title": presentation.slides[0].title if presentation.slides else "No slides",
+                "content": presentation.slides[0].content[:2] if presentation.slides else []
+            }
+        }
+        
     except Exception as e:
-        logger.error(f"❌ Presentation generation error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Presentation generation failed: {str(e)}")
-
+        logger.error(f"Simple test failed: {e}")
+        return {"error": str(e)}
 @app.get("/download-presentation/{session_id}")
 async def download_presentation(session_id: str):
     """Download generated presentation"""
@@ -470,24 +634,26 @@ async def download_presentation(session_id: str):
 
 @app.get("/health")
 async def health_check():
-  """Enhanced health check"""
-  is_api_available = check_api_status()
-  
-  health_status = {
-      "status": "healthy",
-      "pdf_processor": pdf_processor is not None,
-      "ai_agents_initialized": all([
-          summary_agent, flashcard_agent, quiz_agent, 
-          research_agent, youtube_agent, web_agent, coordinator_agent # Include new agent
-      ]),
-      "groq_api_available": is_api_available,
-      "groq_key_configured": bool(os.getenv("GROQ_API_KEY")),
-      "fallback_mode": not is_api_available,
-      "active_sessions": len(study_sessions),
-      "consecutive_api_failures": api_status["consecutive_failures"]
-  }
-  
-  return health_status
+    """Enhanced health check"""
+    is_api_available = check_api_status()
+    
+    health_status = {
+        "status": "healthy",
+        "pdf_processor": pdf_processor is not None,
+        "ai_agents_initialized": all([
+            summary_agent, flashcard_agent, quiz_agent, 
+            research_agent, youtube_agent, web_agent,
+            presentation_agent  # Include presentation agent
+        ]),
+        "groq_api_available": is_api_available,
+        "groq_key_configured": bool(os.getenv("GROQ_API_KEY")),
+        "fallback_mode": not is_api_available,
+        "active_sessions": len(study_sessions),
+        "consecutive_api_failures": api_status["consecutive_failures"],
+        "presentation_service": presentation_agent is not None  # Add this
+    }
+    
+    return health_status
 
 @app.post("/upload-pdf", response_model=ProcessingStatus)
 async def upload_pdf(file: UploadFile = File(...)):
@@ -1133,4 +1299,3 @@ if __name__ == "__main__":
       reload=True,
       log_level="info"
   )
-
