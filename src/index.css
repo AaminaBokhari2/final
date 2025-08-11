@@ -343,6 +343,55 @@
   .scale-102 {
     transform: scale(1.02);
   }
+  
+  .prose-xl {
+    font-size: 1.125rem;
+    line-height: 1.9;
+  }
+  
+  .prose-xl h1 {
+    font-size: 2.25rem;
+    line-height: 1.2;
+    margin-bottom: 1.5rem;
+    margin-top: 2rem;
+  }
+  
+  .prose-xl h2 {
+    font-size: 1.875rem;
+    line-height: 1.3;
+    margin-bottom: 1.25rem;
+    margin-top: 1.75rem;
+  }
+  
+  .prose-xl h3 {
+    font-size: 1.5rem;
+    line-height: 1.4;
+    margin-bottom: 1rem;
+    margin-top: 1.5rem;
+  }
+  
+  .prose-xl p {
+    margin-bottom: 1.5rem;
+    line-height: 1.9;
+  }
+  
+  .prose-xl ul, .prose-xl ol {
+    margin-bottom: 1.5rem;
+    padding-left: 1.5rem;
+  }
+  
+  .prose-xl li {
+    margin-bottom: 0.75rem;
+    line-height: 1.8;
+  }
+  
+  .prose-xl blockquote {
+    margin: 2rem 0;
+    padding: 1.5rem;
+    border-left: 4px solid #3b82f6;
+    background: rgba(59, 130, 246, 0.05);
+    border-radius: 0.5rem;
+  }
 }
 
 /* Custom scrollbar */
