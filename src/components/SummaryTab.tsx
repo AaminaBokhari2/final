@@ -120,22 +120,22 @@ export function SummaryTab() {
 
       {/* Summary Content */}
       <motion.div 
-        className="card p-8"
+        className="card p-10"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.3 }}
       >
-        <div className="flex items-center space-x-3 mb-6">
+        <div className="flex items-center space-x-3 mb-8">
           <div className="w-8 h-8 bg-gradient-to-r from-primary-500 to-primary-600 rounded-lg flex items-center justify-center">
             <FileText className="w-4 h-4 text-white" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+          <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
             Intelligent Summary
           </h2>
         </div>
         
-        <div className="prose prose-lg prose-gray dark:prose-invert max-w-none">
-          <ReactMarkdown className="text-gray-700 dark:text-gray-300 leading-relaxed">
+        <div className="prose prose-xl prose-gray dark:prose-invert max-w-none">
+          <ReactMarkdown className="text-gray-700 dark:text-gray-300 leading-loose text-lg">
             {state.summary}
           </ReactMarkdown>
         </div>
