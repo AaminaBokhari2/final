@@ -46,8 +46,8 @@ export function StudyTabs() {
   };
 
   return (
-    <div className="border-b border-gray-200/50 dark:border-gray-700/50 mb-12 relative">
-      <nav className="flex space-x-1 overflow-x-auto scrollbar-hide">
+    <div className="border-b border-gray-200/60 dark:border-gray-700/60 mb-16 relative">
+      <nav className="flex space-x-2 overflow-x-auto scrollbar-hide pb-2">
         {tabs.map((tab, index) => {
           const Icon = tab.icon;
           const isActive = state.currentTab === tab.id;
@@ -57,33 +57,45 @@ export function StudyTabs() {
               key={tab.id}
               onClick={() => handleTabChange(tab.id)}
               className={`
-                flex items-center space-x-3 px-8 py-4 text-sm font-semibold rounded-t-2xl transition-all duration-300 whitespace-nowrap relative backdrop-blur-sm
+                flex items-center space-x-3 px-10 py-5 text-sm font-bold rounded-t-3xl transition-all duration-500 whitespace-nowrap relative backdrop-blur-md
                 ${isActive 
-                  ? 'text-white shadow-2xl transform -translate-y-1' 
-                  : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-gray-700/60 hover:shadow-lg hover:transform hover:-translate-y-0.5'
+                  ? 'text-white shadow-3xl transform -translate-y-2 scale-105' 
+                  : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-white/70 dark:hover:bg-gray-700/70 hover:shadow-xl hover:transform hover:-translate-y-1 hover:scale-105'
                 }
               `}
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.1 }}
+              transition={{ duration: 0.4, delay: index * 0.05 }}
+              whileHover={{ y: -4 }}
+              whileTap={{ scale: 0.95 }}
             >
               {isActive && (
                 <motion.div
                   className={`absolute inset-0 bg-gradient-to-r ${tab.color} rounded-t-lg`}
                   layoutId="activeTab" 
-                  transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                  transition={{ type: "spring", bounce: 0.3, duration: 0.8 }}
                 />
               )}
-              <div className="relative z-10 flex items-center space-x-2">
-                <Icon className="w-4 h-4" />
+              <div className="relative z-10 flex items-center space-x-3">
+                <motion.div
+                  animate={isActive ? { rotate: [0, 10, -10, 0] } : {}}
+                  transition={{ duration: 2, repeat: isActive ? Infinity : 0 }}
+                >
+                  <Icon className="w-5 h-5" />
+                </motion.div>
                 <span>{tab.label}</span>
               </div>
               {isActive && (
                 <motion.div 
-                  className="absolute -bottom-0.5 left-0 right-0 h-1 bg-gradient-to-r from-white/80 to-white/60 rounded-full"
+                  className="absolute -bottom-1 left-0 right-0 h-1.5 bg-gradient-to-r from-white/90 via-white/70 to-white/90 rounded-full shadow-lg"
                   initial={{ scaleX: 0 }}
                   animate={{ scaleX: 1 }}
-                  transition={{ duration: 0.5 }}
+                  transition={{ duration: 0.8, type: "spring" }}
+                />
+              )}
+              {!isActive && (
+                <motion.div
+                  className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent rounded-t-3xl opacity-0 hover:opacity-100 transition-opacity duration-300"
                 />
               )}
             </motion.button>
