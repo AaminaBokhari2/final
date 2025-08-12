@@ -20,10 +20,9 @@
   }
   
   body {
-    @apply transition-colors duration-500 bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 dark:from-gray-900 dark:via-slate-900 dark:to-purple-950;
+    @apply transition-colors duration-500 bg-gray-50 dark:bg-gray-900;
     min-height: 100vh;
     overflow-x: hidden;
-    background-attachment: fixed;
   }
 }
 
@@ -265,28 +264,6 @@
 
   .interactive-card:hover {
     transform: rotateY(5deg) rotateX(5deg) scale(1.05);
-  }
-
-  .particle-bg::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-image: 
-      radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.4) 0%, transparent 60%),
-      radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.4) 0%, transparent 60%),
-      radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.4) 0%, transparent 60%),
-      radial-gradient(circle at 60% 70%, rgba(236, 72, 153, 0.3) 0%, transparent 50%);
-    animation: particleFloat 25s ease-in-out infinite;
-  }
-
-  @keyframes particleFloat {
-    0%, 100% { transform: translateY(0px) rotate(0deg) scale(1); }
-    25% { transform: translateY(-30px) rotate(90deg) scale(1.1); }
-    50% { transform: translateY(-15px) rotate(180deg) scale(0.9); }
-    75% { transform: translateY(-25px) rotate(270deg) scale(1.05); }
   }
 
   .neon-border {

@@ -170,35 +170,12 @@ export function FileUpload() {
     <div className="max-w-7xl mx-auto">
       {/* Hero Section */}
       <motion.div
-        className="text-center mb-16 relative"
+        className="text-center mb-16"
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8 }}
       >
-        {/* Floating background elements */}
-        <div className="absolute inset-0 overflow-hidden">
-          <motion.div 
-            className="absolute top-10 left-1/4 w-32 h-32 bg-gradient-to-r from-blue-400/20 to-purple-400/20 rounded-full blur-3xl"
-            animate={{ 
-              y: [0, -20, 0],
-              x: [0, 10, 0],
-              scale: [1, 1.1, 1]
-            }}
-            transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-          />
-          <motion.div 
-            className="absolute top-20 right-1/4 w-24 h-24 bg-gradient-to-r from-pink-400/20 to-red-400/20 rounded-full blur-2xl"
-            animate={{ 
-              y: [0, 15, 0],
-              x: [0, -15, 0],
-              scale: [1, 0.9, 1]
-            }}
-            transition={{ duration: 8, repeat: Infinity, ease: "easeInOut", delay: 1 }}
-          />
-        </div>
-
         <motion.div
-          className="relative z-10"
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 1, delay: 0.2 }}
@@ -281,38 +258,9 @@ export function FileUpload() {
           `}
         >
           {/* Animated background pattern */}
-          <div className="absolute inset-0 opacity-10">
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 animate-pulse" />
-          </div>
-          
-          {/* Floating particles */}
-          <div className="absolute inset-0 overflow-hidden">
-            {[...Array(6)].map((_, i) => (
-              <motion.div
-                key={i}
-                className="absolute w-2 h-2 bg-blue-400 rounded-full opacity-30"
-                style={{
-                  left: `${20 + i * 15}%`,
-                  top: `${30 + (i % 2) * 40}%`,
-                }}
-                animate={{
-                  y: [0, -20, 0],
-                  opacity: [0.3, 0.8, 0.3],
-                  scale: [1, 1.5, 1]
-                }}
-                transition={{
-                  duration: 3,
-                  repeat: Infinity,
-                  delay: i * 0.5,
-                  ease: "easeInOut"
-                }}
-              />
-            ))}
-          </div>
-
           <input {...getInputProps()} />
           
-          <div className="space-y-8 relative z-10">
+          <div className="space-y-8">
             <motion.div
               className="flex justify-center"
               animate={uploadStatus === 'processing' ? { 

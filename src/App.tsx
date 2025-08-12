@@ -20,7 +20,6 @@ import { AnalyticsTab } from './components/AnalyticsTab';
 import { BookmarksTab } from './components/BookmarksTab';
 import { PresentationTab } from './components/PresentationTab';
 import { FullPageLoader } from './components/LoadingSpinner';
-import { InteractiveBackground, FloatingShapes } from './components/InteractiveBackground';
 import { motion, AnimatePresence } from 'framer-motion';
 
 function AppContent() {
@@ -73,10 +72,7 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen transition-colors duration-500 relative overflow-hidden particle-bg">
-      {/* Interactive Background */}
-      <InteractiveBackground />
-      <FloatingShapes />
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-500">
       
       <Header />
       
