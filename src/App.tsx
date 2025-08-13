@@ -19,7 +19,9 @@ import { CitationsTab } from './components/CitationsTab';
 import { AnalyticsTab } from './components/AnalyticsTab';
 import { BookmarksTab } from './components/BookmarksTab';
 import { PresentationTab } from './components/PresentationTab';
+import { MindMapTab } from './components/MindMapTab';
 import { FullPageLoader } from './components/LoadingSpinner';
+import { InteractiveBackground, FloatingShapes } from './components/InteractiveBackground';
 import { motion, AnimatePresence } from 'framer-motion';
 
 function AppContent() {
@@ -58,8 +60,8 @@ function AppContent() {
         return <ResourcesTab />;
       case 'citations':
         return <CitationsTab />;
-      case 'concepts':
-        return <div className="text-center py-12"><h3 className="text-xl font-semibold text-gray-900 dark:text-white">Mind Map - Coming Soon!</h3></div>;
+      case 'mindmap':
+        return <MindMapTab />;
       case 'analytics':
         return <AnalyticsTab />;
       case 'bookmarks':
@@ -72,7 +74,10 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-500">
+    <div className="min-h-screen transition-colors duration-500 relative overflow-hidden particle-bg">
+      {/* Interactive Background */}
+      <InteractiveBackground />
+      <FloatingShapes />
       
       <Header />
       
