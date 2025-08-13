@@ -81,6 +81,7 @@ class PresentationResponse(BaseModel):
     images_generated: int
     warnings: List[str]
     download_url: Optional[str] = None
+    presentation_id: Optional[str] = None  # Add this field
 class FlashcardResponse(BaseModel):
   flashcards: List[Dict]
   count: int
@@ -330,201 +331,73 @@ def generate_fallback_quiz(text: str, num_questions: int = 8) -> List[Dict]:
   
   return quiz_questions[:num_questions]
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize agents on startup with better error handling"""
-    global client, pdf_processor, summary_agent, flashcard_agent, quiz_agent, research_agent, youtube_agent, web_agent, coordinator_agent
-    
-    try:
-        logger.info("🚀 Initializing AI agents...")
-        
-        # Initialize GroqClient first
-        client = GroqClient()
-        logger.info("✅ GroqClient initialized")
-        
-        # Initialize PDF processor (always available)
-        pdf_processor = EnhancedPDFProcessor()
-        logger.info("✅ PDF processor initialized")
-        
-        # Try to initialize AI components
-        try:
-            summary_agent = SummaryAgent(client)
-            logger.info("✅ Summary agent initialized")
-            
-            flashcard_agent = FlashcardAgent(client)
-            logger.info("✅ Flashcard agent initialized")
-            
-            quiz_agent = QuizAgent(client)
-            logger.info("✅ Quiz agent initialized")
-            
-            research_agent = AIEnhancedResearchDiscoveryAgent(client)
-            logger.info("✅ Research agent initialized")
-            
-            youtube_agent = AIEnhancedYouTubeDiscoveryAgent(client)
-            logger.info("✅ YouTube agent initialized")
-            
-            web_agent = AIEnhancedWebResourceAgent(client)
-            logger.info("✅ Web agent initialized")
-            
-            # Initialize coordinator agent - FIXED
-            try:
-                coordinator_agent = AIPresentationCoordinatorAgent(client)
-                logger.info("✅ Presentation coordinator agent initialized")
-            except Exception as coord_error:
-                logger.error(f"❌ Failed to initialize coordinator agent: {coord_error}")
-                coordinator_agent = None
-            
-            logger.info("✅ All AI agents initialized")
-            
-            # Check API status
-            if check_api_status():
-                logger.info("✅ Groq API connection successful")
-            else:
-                logger.warning("⚠️ Groq API issues detected - fallback mode enabled")
-                
-        except Exception as e:
-            logger.error(f"❌ Error initializing AI agents: {e}")
-            logger.info("🔄 Running in fallback mode - basic functionality only")
-            
-    except Exception as e:
-        logger.error(f"❌ Critical error during startup: {e}")
-        # Don't raise - allow server to start in fallback mode
 
-from fastapi import FastAPI, Query
-from typing import Optional
 
-@app.post("/generate-presentation")
+@app.post("/generate-presentation", response_model=PresentationResponse)
 async def generate_presentation(
-    topic: Optional[str] = Query(None, description="Presentation topic"),
     session_id: str = Query("default", description="Session ID"),
     max_slides: int = Query(10, description="Maximum number of slides"),
-    generate_images: bool = Query(False, description="Generate images (not implemented)"),
     audience: str = Query("general", description="Target audience"),
-    duration: int = Query(10, description="Duration in minutes"), 
+    duration: int = Query(10, description="Duration in minutes"),
     theme: str = Query("professional", description="Presentation theme")
 ):
-    """
-    Generate presentation - FINAL WORKING VERSION
-    Handles query parameters properly
-    """
+    """Generate presentation using the coordinator agent"""
     try:
-        # Validate coordinator agent
+        if session_id not in study_sessions:
+            raise HTTPException(status_code=404, detail="No session found. Please upload a PDF first.")
+            
         if not coordinator_agent:
-            logger.error("❌ Coordinator agent not initialized")
-            return {
-                "success": False,
-                "error": "Presentation service not available",
-                "message": "Coordinator agent not initialized"
-            }
+            raise HTTPException(status_code=503, detail="Presentation service not available")
+            
+        # Get text from session
+        text = study_sessions[session_id]["text"]
         
-        # Check API status
-        if not check_api_status():
-            logger.warning("⚠️ API unavailable")
-            return {
-                "success": False,
-                "error": "API unavailable", 
-                "message": "AI service temporarily unavailable. Please try again later."
-            }
+        # Limit text length for processing
+        presentation_text = text[:8000]  # Limit to first 8000 characters
         
-        # Get topic from session if not provided
-        if not topic:
-            if session_id not in study_sessions:
-                return {
-                    "success": False,
-                    "error": "No topic provided",
-                    "message": "Please provide a topic or upload a document first"
-                }
-            
-            # Extract topic from document
-            document_text = study_sessions[session_id]["text"]
-            words = document_text.split()[:100]
-            topic = " ".join([w for w in words if len(w) > 3][:5])
-            if not topic:
-                topic = "Document Summary"
-            
-            logger.info(f"📄 Extracted topic from document: {topic}")
+        logger.info(f"🎨 Generating presentation from {len(presentation_text)} characters of text")
         
-        logger.info(f"🚀 Generating presentation:")
-        logger.info(f"   📝 Topic: {topic}")
-        logger.info(f"   👥 Audience: {audience}")
-        logger.info(f"   ⏱️ Duration: {duration} minutes")
-        logger.info(f"   🎨 Theme: {theme}")
-        logger.info(f"   📊 Max slides: {max_slides}")
+        # Generate presentation with timeout
+        presentation, design_guidelines, quality_assessment = await asyncio.wait_for(
+            asyncio.to_thread(
+                coordinator_agent.create_presentation,
+                topic=presentation_text[:100],  # Use first 100 chars as topic
+                audience=audience,
+                duration=duration,
+                theme=theme
+            ),
+            timeout=180.0  # 3 minute timeout
+        )
         
-        # Generate presentation with proper error handling
-        try:
-            result = await asyncio.wait_for(
-                asyncio.to_thread(
-                    coordinator_agent.create_presentation,
-                    topic=topic,
-                    audience=audience,
-                    duration=duration,
-                    theme=theme
-                ),
-                timeout=180.0  # 3 minutes timeout
-            )
-            
-            presentation, design_guidelines, quality_result = result
-            
-            # Limit slides to max_slides
-            limited_slides = presentation.slides[:max_slides]
-            
-            # Return success response
-            response_data = {
-                "success": True,
-                "presentation": {
-                    "title": presentation.title,
-                    "slides": [
-                        {
-                            "title": slide.title,
-                            "content": slide.content,
-                            "slide_type": slide.slide_type,
-                            "notes": getattr(slide, 'notes', '')
-                        } for slide in limited_slides
-                    ],
-                    "total_slides": len(limited_slides),
-                    "theme": presentation.theme
-                },
-                "design_guidelines": {
-                    "color_scheme": design_guidelines.get("color_scheme", ["#1e3a8a", "#3b82f6", "#93c5fd"]),
-                    "fonts": design_guidelines.get("fonts", {"title": "Arial Bold", "body": "Arial"}),
-                    "layout": design_guidelines.get("layout", {"type": "standard"}),
-                    "suggestions": design_guidelines.get("suggestions", "Use consistent formatting")
-                },
-                "quality_assessment": {
-                    "issues": quality_result.get("issues", []),
-                    "suggestions": quality_result.get("suggestions", []),
-                    "quality_assessment": quality_result.get("quality_assessment", "Good presentation"),
-                    "overall_score": quality_result.get("overall_score", 85),
-                    "success": quality_result.get("success", True)
-                }
-            }
-            
-            logger.info(f"✅ Presentation generated successfully: {len(limited_slides)} slides")
-            return response_data
-            
-        except asyncio.TimeoutError:
-            logger.error("❌ Presentation generation timeout")
-            return {
-                "success": False,
-                "error": "Generation timeout",
-                "message": "Presentation generation took too long. Try with a simpler topic."
-            }
-        except Exception as gen_error:
-            logger.error(f"❌ Generation error: {str(gen_error)}")
-            return {
-                "success": False,
-                "error": "Generation failed",
-                "message": f"Failed to generate presentation: {str(gen_error)}"
-            }
-    
+        # Generate PPTX file
+        pptx_filename = f"presentation_{session_id}.pptx"
+        pptx_path = os.path.join(tempfile.gettempdir(), pptx_filename)
+        
+        # Use the coordinator's method to create PPTX
+        pptx_success = coordinator_agent.create_pptx_file(presentation, pptx_path)
+        
+        if not pptx_success:
+            raise HTTPException(status_code=500, detail="Failed to generate PPTX file")
+        
+        # Store in session
+        study_sessions[session_id]["presentation_path"] = pptx_path
+        
+        return PresentationResponse(
+            status="success",
+            message="Presentation generated successfully",
+            slides_generated=len(presentation.slides),
+            images_generated=0,  # Update if you implement image generation
+            warnings=quality_assessment.get("issues", []),
+            download_url=f"/download-presentation/{session_id}",
+            presentation_id=f"pres_{session_id}"
+        )
+        
+    except asyncio.TimeoutError:
+        logger.error("Presentation generation timeout")
+        raise HTTPException(status_code=504, detail="Presentation generation timeout")
     except Exception as e:
-        logger.error(f"❌ Unexpected error in presentation generation: {str(e)}")
-        return {
-            "success": False,
-            "error": "Unexpected error",
-            "message": f"Unexpected error: {str(e)}"
-        }
+        logger.error(f"Presentation generation error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Presentation generation failed: {str(e)}")
         
 @app.get("/test-presentation")
 async def test_presentation():
@@ -616,7 +489,6 @@ async def generate_presentation_simple(topic: str = "Machine Learning"):
 @app.get("/download-presentation/{session_id}")
 async def download_presentation(session_id: str):
     """Download generated presentation"""
-    
     if session_id not in study_sessions:
         raise HTTPException(status_code=404, detail="No session found")
     
@@ -631,7 +503,6 @@ async def download_presentation(session_id: str):
         filename=filename,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
     )
-
 @app.get("/health")
 async def health_check():
     """Enhanced health check"""
